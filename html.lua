@@ -33,15 +33,51 @@ local escapes = {
   ["'"] = '&#039;'
 }
 local pair
-pair = function()
-  local environment, buffer = { }, {
-    insert = table.insert,
-    concat = table.concat,
-    escape = function(self, value)
-      local escaped = tostring(value):gsub("[<>&]", escapes)
-      return self:insert(escaped)
+pair = function(buffer)
+  if buffer == nil then
+    buffer = { }
+  end
+  if type(buffer) ~= 'table' then
+    error(2, "Argument must be a table or nil")
+  end
+  local environment = { }
+  local escape
+  escape = function(value)
+    return (function(self)
+      return self
+    end)(tostring(value):gsub([[[<>&]'"]], escapes))
+  end
+  local split
+  split = function(tab)
+    local ary = { }
+    for k, v in ipairs(tab) do
+      ary[k] = v
+      tab[k] = nil
     end
-  }
+    return ary, tab
+  end
+  local flatten
+  flatten = function(tab, flat)
+    if flat == nil then
+      flat = { }
+    end
+    for key, value in pairs(tab) do
+      if type(key) == "number" then
+        if type(value) == "table" then
+          flatten(value, flat)
+        else
+          flat[#flat + 1] = value
+        end
+      else
+        if type(value) == "table" then
+          flat[key] = table.concat(value(' '))
+        else
+          flat[key] = value
+        end
+      end
+    end
+    return flat
+  end
   local attrib
   attrib = function(args)
     local res = setmetatable({ }, {
@@ -51,7 +87,7 @@ pair = function()
           local _accum_0 = { }
           local _len_0 = 1
           for key, value in pairs(self) do
-            if type(value) == 'string' then
+            if type(value) == 'string' or type(value) == 'number' then
               _accum_0[_len_0] = tostring(key) .. "=\"" .. tostring(value) .. "\""
               _len_0 = _len_0 + 1
             end
@@ -61,15 +97,10 @@ pair = function()
         return #tab > 0 and ' ' .. table.concat(tab, ' ') or ''
       end
     })
-    for _index_0 = 1, #args do
-      local arg = args[_index_0]
-      if type(arg) == 'table' then
-        for key, value in pairs(arg) do
-          if type(key) == 'string' then
-            res[key] = value
-            local r = true
-          end
-        end
+    for key, value in pairs(args) do
+      if type(key) == 'string' then
+        res[key] = value
+        local r = true
       end
     end
     return res
@@ -84,49 +115,69 @@ pair = function()
       elseif 'function' == _exp_0 then
         arg()
       else
-        buffer:insert(tostring(arg))
+        table.insert(buffer, tostring(arg))
       end
     end
   end
   environment.raw = function(text)
-    return buffer:insert(text)
+    return table.insert(buffer, text)
   end
   environment.text = function(text)
-    return buffer:escape(text)
+    return table.insert(buffer, (escape(text)))
+  end
+  environment.tag = function(tagname, ...)
+    local inner, args = split(flatten({
+      ...
+    }))
+    table.insert(buffer, "<" .. tostring(tagname) .. tostring(attrib(args)) .. ">")
+    handle(inner)
+    if not (void[key]) then
+      return table.insert(buffer, "</" .. tostring(tagname) .. ">")
+    end
   end
   setmetatable(environment, {
     __index = function(self, key)
       return _ENV[key] or function(...)
-        buffer:insert("<" .. tostring(key) .. tostring(attrib({
-          ...
-        })) .. ">")
-        handle({
-          ...
-        })
-        if not (void[key]) then
-          return buffer:insert("</" .. tostring(key) .. ">")
-        end
+        return environment.tag(key, ...)
       end
     end
   })
   return environment, buffer
 end
+local build
+if _VERSION == 'lua 5.1' then
+  build = function(fnc)
+    assert(type(fnc) == 'function', 'wrong argument to render, expecting function')
+    local env, buf = pair
+    setfenv(fnc, env)
+    fnc()
+    return buf
+  end
+else
+  build = function(fnc)
+    assert(type(fnc) == 'function', 'wrong argument to render, expecting function')
+    local env, buf = pair()
+    local hlp
+    do
+      local _ENV = env
+      hlp = function()
+        return aaaaa
+      end
+    end
+    debug.upvaluejoin(fnc, 1, hlp, 1)
+    fnc()
+    buf.render = function(self)
+      return table.concat(self, "\n")
+    end
+    return buf
+  end
+end
 local render
 render = function(fnc)
-  local env, buf = pair()
-  local hlp
-  do
-    local _ENV = env
-    hlp = function()
-      return aaaaa
-    end
-  end
-  assert(type(fnc) == 'function', 'wrong argument to render, expecting function')
-  debug.upvaluejoin(fnc, 1, hlp, 1)
-  fnc()
-  return buf:concat('\n')
+  return build(fnc):render()
 end
 return {
   render = render,
+  build = build,
   pair = pair
 }

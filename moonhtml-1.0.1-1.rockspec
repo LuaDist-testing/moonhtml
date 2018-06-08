@@ -1,23 +1,23 @@
 -- This file was automatically generated for the LuaDist project.
 
 package = "moonhtml"
-version = "1.0.0-1"
+version = "1.0.1-1"
 -- LuaDist source
 source = {
-  tag = "1.0.0-1",
+  tag = "1.0.1-1",
   url = "git://github.com/LuaDist-testing/moonhtml.git"
 }
 -- Original source
 -- source = {
---    url = "git://github.com/DarkWiiPlayer/moonhtml.git";
---    tag = 'v1.0';
+--   tag = 'v1.0.1';
+--   url = "git://github.com/DarkWiiPlayer/moonhtml.git"
 -- }
 description = {
    homepage = "https://github.com/DarkWiiPlayer/moonhtml";
    license = "Unlicense";
 }
 dependencies = {
-  "lua >= 5.3";
+  "lua >= 5.1";
 }
 build = {
    type = "builtin",

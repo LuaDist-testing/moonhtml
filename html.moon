@@ -13,25 +13,43 @@ escapes = {
   ["'"]: '&#039;'
 }
 
-pair = ->
-  environment, buffer = {}, {
-    insert: table.insert
-    concat: table.concat
-    escape: (value) =>
-      escaped = tostring(value)\gsub "[<>&]", escapes
-      @insert escaped
-  }
+pair= (buffer = {}) ->
+  if type(buffer) != 'table'
+    error 2, "Argument must be a table or nil"
+
+  environment = {}
+  escape = (value) ->
+    (=>@) tostring(value)\gsub [[[<>&]'"]], escapes
+
+  split = (tab) ->
+    ary = {}
+    for k,v in ipairs(tab) do
+      ary[k]=v
+      tab[k]=nil
+    return ary, tab
+
+  flatten = (tab, flat={}) ->
+    for key, value in pairs tab
+      if type(key)=="number"
+        if type(value)=="table"
+          flatten(value, flat)
+        else
+          flat[#flat+1]=value
+      else
+        if type(value)=="table"
+          flat[key] = table.concat value ' '
+        else
+          flat[key] = value
+    flat
 
   attrib = (args) ->
     res = setmetatable {}, __tostring: =>
-      tab = ["#{key}=\"#{value}\"" for key, value in pairs(@) when type(value)=='string']
+      tab = ["#{key}=\"#{value}\"" for key, value in pairs(@) when type(value)=='string' or type(value)=='number']
       #tab > 0 and ' '..table.concat(tab,' ') or ''
-    for arg in *args
-      if type(arg) == 'table'
-        for key, value in pairs(arg)
-          if type(key)=='string'
-            res[key] = value
-            r = true
+    for key, value in pairs(args)
+      if type(key)=='string'
+        res[key] = value
+        r = true
     return res
 
   handle = (args) ->
@@ -42,32 +60,48 @@ pair = ->
         when 'function'
           arg!
         else
-          buffer\insert tostring arg
+          table.insert buffer, tostring arg
 
   environment.raw = (text) ->
-    buffer\insert text
+    table.insert buffer, text
 
   environment.text = (text) ->
-    buffer\escape text
+    table.insert buffer, (escape text)
+
+  environment.tag = (tagname, ...) ->
+    inner, args = split flatten {...}
+    table.insert buffer, "<#{tagname}#{attrib args}>"
+    handle inner
+    table.insert buffer, "</#{tagname}>" unless void[key]
+
 
   setmetatable environment, {
     __index: (key) =>
       _ENV[key] or (...) ->
-        buffer\insert "<#{key}#{attrib{...}}>"
-        handle{...}
-        buffer\insert "</#{key}>" unless void[key]
+        environment.tag(key, ...)
   }
   return environment, buffer
 
+build = if _VERSION == 'lua 5.1' then
+  (fnc) ->
+    assert(type(fnc)=='function', 'wrong argument to render, expecting function')
+    env, buf = pair
+    setfenv(fnc, env)
+    fnc!
+    buf
+else
+  (fnc) ->
+    assert(type(fnc)=='function', 'wrong argument to render, expecting function')
+    env, buf = pair!
+    hlp = do -- gotta love this syntax ♥
+      _ENV = env
+      -> aaaaa -- needs to access a global to get the environment upvalue
+    debug.upvaluejoin(fnc, 1, hlp, 1) -- Set environment
+    fnc!
+    buf.render = => table.concat @, "\n"
+    buf
 
 render = (fnc) ->
-  env, buf = pair!
-  hlp = do -- gotta love this syntax ♥
-    _ENV = env
-    -> aaaaa -- needs to access a global to get the environment upvalue
-  assert(type(fnc)=='function', 'wrong argument to render, expecting function')
-  debug.upvaluejoin(fnc, 1, hlp, 1) -- Set environment
-  fnc!
-  return buf\concat '\n'
+  build(fnc)\render!
 
-{:render, :pair}
+{:render, :build, :pair}
